@@ -129,6 +129,42 @@ $("volume").addEventListener("input", (e) => {
   volTimer = setTimeout(() => call("set_volume", { volume: Number(e.target.value) }), 80);
 });
 
+// ── A–Z jump bar ──────────────────────────────────────────────────────────────
+const JUMP_LETTERS = ["#", ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ", "Æ", "Ø", "Å"];
+function letterOf(text) {
+  for (const ch of (text || "").trim()) {
+    const u = ch.toUpperCase();
+    if ("ÆØÅ".includes(u)) return u;
+    const b = u.normalize("NFD").replace(/[\u0300-\u036f]/g, "")[0] || "";
+    if (/[A-Z]/.test(b)) return b;
+    if (/[0-9]/.test(b)) return "#";
+  }
+  return "#";
+}
+const jumpTargets = {};
+function initJump(barId, listId) {
+  const bar = $(barId);
+  bar.innerHTML = JUMP_LETTERS.map((l) => `<button data-l="${l}" disabled>${l}</button>`).join("");
+  bar.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-l]"); if (!b || b.disabled) return;
+    const row = jumpTargets[barId]?.[b.dataset.l]; if (!row) return;
+    const list = $(listId);
+    list.scrollTo({ top: list.scrollTop + row.getBoundingClientRect().top - list.getBoundingClientRect().top, behavior: "smooth" });
+    row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash");
+  });
+}
+// call after rendering a list whose rows carry data-k="<text to index by>"
+function updateJump(barId, listId) {
+  const first = {};
+  $(listId).querySelectorAll("[data-k]").forEach((r) => {
+    if (!r.dataset.k) return;
+    const l = letterOf(r.dataset.k);
+    if (!(l in first)) first[l] = r;
+  });
+  jumpTargets[barId] = first;
+  $(barId).querySelectorAll("button").forEach((b) => { b.disabled = !(b.dataset.l in first); });
+}
+
 // ── library ───────────────────────────────────────────────────────────────────
 const LIB_CAP = 1000;
 const norm = (s) => (s || "").toLowerCase();
@@ -144,8 +180,8 @@ function computeLibView() {
   S.libView = v.slice().sort(cmp);
 }
 
-const trackRowHtml = (t, n) => `
-    <div class="row" data-id="${t.id}">
+const trackRowHtml = (t, n, k = "") => `
+    <div class="row" data-id="${t.id}" data-k="${esc(k)}">
       <span class="c-n">${n}</span>
       <span class="c-title" title="${esc(t.title)}">${esc(t.title)}</span>
       <span class="c-artist">${esc(t.artist)}</span>
@@ -167,12 +203,15 @@ function renderLibrary() {
   const list = $("lib-list");
   if (!S.lib.length) {
     list.innerHTML = `<div class="empty">${S.pb?.scanning ? "Scanning your music folder…" : "No music found. Choose a folder in Settings."}</div>`;
+    updateJump("lib-jump", "lib-list");
     return;
   }
   const shown = S.libView.slice(0, LIB_CAP);
-  list.innerHTML = shown.map((t, i) => trackRowHtml(t, i + 1)).join("") +
+  const sortKey = S.sort.key === "duration" ? null : S.sort.key;
+  list.innerHTML = shown.map((t, i) => trackRowHtml(t, i + 1, sortKey ? t[sortKey] : "")).join("") +
     (S.libView.length > LIB_CAP ? `<div class="note">Showing first ${LIB_CAP} of ${S.libView.length} — refine your search.</div>` : "") +
     (shown.length === 0 ? `<div class="empty">No matches.</div>` : "");
+  updateJump("lib-jump", "lib-list");
 }
 
 // ── folder view ──
@@ -229,6 +268,7 @@ function renderFolders() {
   if (!S.lib.length) {
     $("lib-crumbs").innerHTML = "";
     list.innerHTML = `<div class="empty">${S.pb?.scanning ? "Scanning your music folder…" : "No music found. Choose a folder in Settings."}</div>`;
+    updateJump("lib-jump", "lib-list");
     return;
   }
   if (!S.tree) S.tree = buildTree();
@@ -246,7 +286,7 @@ function renderFolders() {
   const tracks = ordered(cur.tracks).filter((t) => !q || norm(t.title).includes(q) || norm(t.artist).includes(q) || norm(t.album).includes(q));
 
   const dirRows = subs.map((d) => `
-    <div class="row dir" data-dir="${esc(d.path)}">
+    <div class="row dir" data-dir="${esc(d.path)}" data-k="${esc(d.name)}">
       <span class="c-n">${ICON.folder}</span>
       <span class="c-title" title="${esc(d.name)}">${esc(d.name)}</span>
       <span class="c-artist">${d.count} track${d.count === 1 ? "" : "s"}</span>
@@ -254,9 +294,10 @@ function renderFolders() {
       <span class="c-act"><button data-act="play" title="Play folder now">${ICON.play}</button><button data-act="add" title="Add folder to queue">${ICON.plus}</button></span>
     </div>`).join("");
   const shown = tracks.slice(0, LIB_CAP);
-  list.innerHTML = dirRows + shown.map((t, i) => trackRowHtml(t, i + 1)).join("") +
+  list.innerHTML = dirRows + shown.map((t, i) => trackRowHtml(t, i + 1, t.title)).join("") +
     (tracks.length > LIB_CAP ? `<div class="note">Showing first ${LIB_CAP} of ${tracks.length} tracks.</div>` : "") +
     (!subs.length && !shown.length ? `<div class="empty">${q ? "No matches." : "This folder is empty."}</div>` : "");
+  updateJump("lib-jump", "lib-list");
 }
 
 function setLibMode(mode) {
@@ -368,15 +409,16 @@ function renderDlna() {
   $("dlna-crumbs").innerHTML = S.dlna.stack.map((c, i) => `<button data-i="${i}">${esc(c.title)}</button>${i < S.dlna.stack.length - 1 ? "<span>/</span>" : ""}`).join("");
   const view = dlnaView();
   const list = $("dlna-list");
-  if (!view.length) { list.innerHTML = `<div class="empty">${S.dlna.servers.length ? "Nothing here." : "No DLNA media server found on the network."}</div>`; return; }
+  if (!view.length) { list.innerHTML = `<div class="empty">${S.dlna.servers.length ? "Nothing here." : "No DLNA media server found on the network."}</div>`; updateJump("dlna-jump", "dlna-list"); return; }
   list.innerHTML = view.map((it) => it.is_container
-    ? `<div class="row folder" data-id="${esc(it.id)}"><span class="c-n">${ICON.folder}</span><span class="c-title">${esc(it.title)}</span><span class="c-dur">${it.child_count || ""}</span></div>`
-    : `<div class="row" data-id="${esc(it.id)}">
+    ? `<div class="row folder" data-id="${esc(it.id)}" data-k="${esc(it.title)}"><span class="c-n">${ICON.folder}</span><span class="c-title">${esc(it.title)}</span><span class="c-dur">${it.child_count || ""}</span></div>`
+    : `<div class="row" data-id="${esc(it.id)}" data-k="${esc(it.title)}">
         <span class="c-n"></span><span class="c-title" title="${esc(it.title)}">${esc(it.title)}</span>
         <span class="c-artist">${esc(it.artist)}</span><span class="c-album">${esc(it.album)}</span>
         <span class="c-dur">${it.duration ? fmt(it.duration) : ""}</span>
         <span class="c-act"><button data-act="play" title="Play now">${ICON.play}</button><button data-act="add" title="Add to queue">${ICON.plus}</button></span>
       </div>`).join("");
+  updateJump("dlna-jump", "dlna-list");
 }
 const pick = (it) => ({ title: it.title, artist: it.artist, album: it.album, uri: it.uri, mime: it.mime, album_art: it.album_art, duration: it.duration });
 const dlnaTracks = () => dlnaView().filter((it) => !it.is_container);
@@ -419,6 +461,9 @@ $("set-ip-save").onclick = () => call("set_wiim_ip", { ip: $("set-ip").value.tri
 $("set-rediscover").onclick = () => call("rediscover_device");
 
 // ── boot ──────────────────────────────────────────────────────────────────────
+initJump("lib-jump", "lib-list");
+initJump("dlna-jump", "dlna-list");
+
 (async function init() {
   await listen("playback", (e) => renderPlayback(e.payload));
   await listen("queue", (e) => { S.queue = e.payload; renderQueue(); });
