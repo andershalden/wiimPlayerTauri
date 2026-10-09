@@ -44,6 +44,7 @@ function showView(name) {
   document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
   document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
   if (name === "network" && S.dlna.servers.length === 0 && !S.dlna.searched) discoverDlna();
+  if (name === "queue") focusCurrent(true); // reading rects forces layout, so no rAF needed
 }
 $("nav").addEventListener("click", (e) => { const b = e.target.closest("button[data-view]"); if (b) showView(b.dataset.view); });
 
@@ -97,7 +98,10 @@ function renderPlayback(pb) {
   $("btn-repeat").classList.toggle("on", pb.repeat !== "off");
   setText("lib-status", pb.scanning ? "Scanning…" : "");
 
-  if (prevCur !== pb.current) markCurrent();
+  if (prevCur !== pb.current) {
+    markCurrent();
+    if (queueActive()) focusCurrent(false);
+  }
 }
 
 // interpolate progress between 1 s polls
@@ -367,6 +371,19 @@ function markCurrent() {
   const cur = S.pb?.current ?? S.queue.current;
   document.querySelectorAll("#queue-list .row").forEach((r) => r.classList.toggle("current", Number(r.dataset.i) === cur));
 }
+// Scroll the current track into view. `always` centres it (used when the view
+// opens); otherwise it only scrolls if the row is off-screen, so clicking a
+// visible row in the queue doesn't make the list jump.
+const queueActive = () => $("view-queue").classList.contains("active");
+function focusCurrent(always) {
+  const row = document.querySelector("#queue-list .row.current"); if (!row) return;
+  const list = $("queue-list");
+  const r = row.getBoundingClientRect(), l = list.getBoundingClientRect();
+  if (!always && r.top >= l.top && r.bottom <= l.bottom) return;
+  const target = list.scrollTop + (r.top - l.top) - (l.height - r.height) / 2;
+  list.scrollTo({ top: Math.max(0, target), behavior: always ? "auto" : "smooth" });
+}
+
 $("queue-list").addEventListener("click", (e) => {
   const row = e.target.closest(".row"); if (!row) return;
   const i = Number(row.dataset.i);
