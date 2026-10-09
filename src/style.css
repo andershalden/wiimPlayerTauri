@@ -15,6 +15,7 @@
   font-size: 14px;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
 html, body { height: 100%; background: var(--bg); color: var(--text); overflow: hidden; user-select: none; }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
 svg { fill: currentColor; width: 20px; height: 20px; flex: none; }
@@ -136,3 +137,13 @@ input[type=range]:hover::-webkit-slider-thumb, input[type=range]:active::-webkit
   .row, .cols.head, .queue-row { grid-template-columns: 38px minmax(0, 3fr) minmax(0, 2fr) 56px 64px; }
   .c-album { display: none; }
 }
+
+/* segmented toggle + folder rows */
+.seg { display: inline-flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 2px; }
+.seg button { padding: 5px 14px; border-radius: 999px; color: var(--muted); }
+.seg button:hover { color: var(--text); }
+.seg button.on { background: var(--accent-dim); color: var(--accent); }
+.row.dir { cursor: pointer; }
+.row.dir .c-title { font-weight: 500; }
+.row.dir .c-n { display: grid; place-items: center; color: var(--accent); }
+.row.dir .c-n svg { width: 18px; height: 18px; }

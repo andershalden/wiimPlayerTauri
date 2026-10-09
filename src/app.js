@@ -23,6 +23,8 @@ const S = {
   pb: null, pbAt: 0,
   queue: { items: [], current: null },
   lib: [], sort: { key: "artist", dir: 1 }, libView: [],
+  libMode: (() => { try { return localStorage.getItem("libMode") || "tracks"; } catch { return "tracks"; } })(),
+  tree: null, folder: null,
   dlna: { servers: [], server: -1, stack: [], items: [] },
   seeking: false,
   artSrc: { now: "", bar: "" },
@@ -142,9 +144,25 @@ function computeLibView() {
   S.libView = v.slice().sort(cmp);
 }
 
+const trackRowHtml = (t, n) => `
+    <div class="row" data-id="${t.id}">
+      <span class="c-n">${n}</span>
+      <span class="c-title" title="${esc(t.title)}">${esc(t.title)}</span>
+      <span class="c-artist">${esc(t.artist)}</span>
+      <span class="c-album">${esc(t.album)}</span>
+      <span class="c-dur">${t.duration ? fmt(t.duration) : ""}</span>
+      <span class="c-act"><button data-act="play" title="Play now">${ICON.play}</button><button data-act="add" title="Add to queue">${ICON.plus}</button></span>
+    </div>`;
+
 function renderLibrary() {
-  computeLibView();
   $("lib-count").textContent = S.lib.length ? String(S.lib.length) : "";
+  const folders = S.libMode === "folders";
+  $("lib-head").hidden = folders;
+  $("lib-crumbs").hidden = !folders;
+  document.querySelectorAll("#lib-mode button").forEach((b) => b.classList.toggle("on", b.dataset.mode === S.libMode));
+  if (folders) return renderFolders();
+
+  computeLibView();
   document.querySelectorAll("#lib-head [data-sort]").forEach((b) => b.classList.toggle("sorted", b.dataset.sort === S.sort.key));
   const list = $("lib-list");
   if (!S.lib.length) {
@@ -152,27 +170,122 @@ function renderLibrary() {
     return;
   }
   const shown = S.libView.slice(0, LIB_CAP);
-  list.innerHTML = shown.map((t, i) => `
-    <div class="row" data-id="${t.id}">
-      <span class="c-n">${i + 1}</span>
-      <span class="c-title" title="${esc(t.title)}">${esc(t.title)}</span>
-      <span class="c-artist">${esc(t.artist)}</span>
-      <span class="c-album">${esc(t.album)}</span>
-      <span class="c-dur">${t.duration ? fmt(t.duration) : ""}</span>
-      <span class="c-act"><button data-act="play" title="Play now">${ICON.play}</button><button data-act="add" title="Add to queue">${ICON.plus}</button></span>
-    </div>`).join("") + (S.libView.length > LIB_CAP ? `<div class="note">Showing first ${LIB_CAP} of ${S.libView.length} — refine your search.</div>` : "") +
+  list.innerHTML = shown.map((t, i) => trackRowHtml(t, i + 1)).join("") +
+    (S.libView.length > LIB_CAP ? `<div class="note">Showing first ${LIB_CAP} of ${S.libView.length} — refine your search.</div>` : "") +
     (shown.length === 0 ? `<div class="empty">No matches.</div>` : "");
 }
 
+// ── folder view ──
+const dirOf = (p) => p.slice(0, p.lastIndexOf("/")) || "/";
+const byName = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+
+function buildTree() {
+  const dirs = new Map();
+  const node = (p) => {
+    let d = dirs.get(p);
+    if (!d) { d = { path: p, name: p.slice(p.lastIndexOf("/") + 1) || "/", subdirs: new Set(), tracks: [], count: 0 }; dirs.set(p, d); }
+    return d;
+  };
+  let root = null;
+  for (const t of S.lib) {
+    const d = dirOf(t.path);
+    if (root === null) root = d;
+    else while (root !== "/" && d !== root && !d.startsWith(root + "/")) root = dirOf(root);
+  }
+  if (root === null) return { root: "/", dirs };
+  for (const t of S.lib) {
+    const d = dirOf(t.path);
+    node(d).tracks.push(t);
+    for (let cur = d; ; ) {
+      node(cur).count++;
+      if (cur === root) break;
+      const parent = dirOf(cur);
+      node(parent).subdirs.add(cur);
+      cur = parent;
+    }
+  }
+  return { root, dirs };
+}
+
+// album order: by track number when every file has one, otherwise by file name
+function ordered(tracks) {
+  const t = tracks.slice();
+  const numbered = t.length > 0 && t.every((x) => x.track_no > 0);
+  return t.sort((a, b) => (numbered ? a.track_no - b.track_no : 0) || a.path.localeCompare(b.path, undefined, { numeric: true }));
+}
+function collect(path) {
+  const out = [];
+  (function walk(p) {
+    const n = S.tree.dirs.get(p); if (!n) return;
+    out.push(...ordered(n.tracks));
+    [...n.subdirs].map((d) => S.tree.dirs.get(d)).sort(byName).forEach((d) => walk(d.path));
+  })(path);
+  return out;
+}
+const folderTracks = () => (S.tree && S.tree.dirs.has(S.folder) ? collect(S.folder) : []);
+
+function renderFolders() {
+  const list = $("lib-list");
+  if (!S.lib.length) {
+    $("lib-crumbs").innerHTML = "";
+    list.innerHTML = `<div class="empty">${S.pb?.scanning ? "Scanning your music folder…" : "No music found. Choose a folder in Settings."}</div>`;
+    return;
+  }
+  if (!S.tree) S.tree = buildTree();
+  const { root, dirs } = S.tree;
+  if (!S.folder || !dirs.has(S.folder)) S.folder = root;
+
+  const trail = [];
+  for (let p = S.folder; ; p = dirOf(p)) { trail.unshift(p); if (p === root || p === "/") break; }
+  $("lib-crumbs").innerHTML = trail.map((p, i) =>
+    `<button data-path="${esc(p)}">${esc(dirs.get(p)?.name || p)}</button>${i < trail.length - 1 ? "<span>/</span>" : ""}`).join("");
+
+  const cur = dirs.get(S.folder);
+  const q = norm($("lib-filter").value).trim();
+  const subs = [...cur.subdirs].map((p) => dirs.get(p)).sort(byName).filter((d) => !q || norm(d.name).includes(q));
+  const tracks = ordered(cur.tracks).filter((t) => !q || norm(t.title).includes(q) || norm(t.artist).includes(q) || norm(t.album).includes(q));
+
+  const dirRows = subs.map((d) => `
+    <div class="row dir" data-dir="${esc(d.path)}">
+      <span class="c-n">${ICON.folder}</span>
+      <span class="c-title" title="${esc(d.name)}">${esc(d.name)}</span>
+      <span class="c-artist">${d.count} track${d.count === 1 ? "" : "s"}</span>
+      <span class="c-album"></span><span class="c-dur"></span>
+      <span class="c-act"><button data-act="play" title="Play folder now">${ICON.play}</button><button data-act="add" title="Add folder to queue">${ICON.plus}</button></span>
+    </div>`).join("");
+  const shown = tracks.slice(0, LIB_CAP);
+  list.innerHTML = dirRows + shown.map((t, i) => trackRowHtml(t, i + 1)).join("") +
+    (tracks.length > LIB_CAP ? `<div class="note">Showing first ${LIB_CAP} of ${tracks.length} tracks.</div>` : "") +
+    (!subs.length && !shown.length ? `<div class="empty">${q ? "No matches." : "This folder is empty."}</div>` : "");
+}
+
+function setLibMode(mode) {
+  S.libMode = mode;
+  try { localStorage.setItem("libMode", mode); } catch {}
+  renderLibrary();
+}
+$("lib-mode").addEventListener("click", (e) => { const b = e.target.closest("button[data-mode]"); if (b) setLibMode(b.dataset.mode); });
+$("lib-crumbs").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-path]"); if (!b) return;
+  S.folder = b.dataset.path; $("lib-filter").value = ""; renderLibrary();
+});
+
 $("lib-list").addEventListener("click", (e) => {
   const row = e.target.closest(".row"); if (!row) return;
+  if (row.dataset.dir !== undefined) {
+    const act = e.target.closest("button")?.dataset.act;
+    if (!act) { S.folder = row.dataset.dir; $("lib-filter").value = ""; renderLibrary(); $("lib-list").scrollTop = 0; return; }
+    const ids = collect(row.dataset.dir).map((t) => t.id);
+    if (ids.length) call("queue_add_library", { ids, replace: false, play: act === "play" });
+    return;
+  }
   const id = Number(row.dataset.id);
   const act = e.target.closest("button")?.dataset.act;
   if (act === "add") call("queue_add_library", { ids: [id], replace: false, play: false });
   else if (act === "play") call("queue_add_library", { ids: [id], replace: false, play: true });
 });
 $("lib-list").addEventListener("dblclick", (e) => {
-  const row = e.target.closest(".row"); if (!row || e.target.closest("button")) return;
+  const row = e.target.closest(".row"); if (!row || row.dataset.dir !== undefined || e.target.closest("button")) return;
   call("queue_add_library", { ids: [Number(row.dataset.id)], replace: false, play: true });
 });
 $("lib-head").addEventListener("click", (e) => {
@@ -183,8 +296,9 @@ $("lib-head").addEventListener("click", (e) => {
 });
 let libTimer = 0;
 $("lib-filter").addEventListener("input", () => { clearTimeout(libTimer); libTimer = setTimeout(renderLibrary, 120); });
-$("lib-addall").onclick = () => call("queue_add_library", { ids: S.libView.map((t) => t.id), replace: false, play: false });
-$("lib-playall").onclick = () => call("queue_add_library", { ids: S.libView.map((t) => t.id), replace: true, play: true });
+const libIds = () => (S.libMode === "folders" ? folderTracks() : S.libView).map((t) => t.id);
+$("lib-addall").onclick = () => { const ids = libIds(); if (ids.length) call("queue_add_library", { ids, replace: false, play: false }); };
+$("lib-playall").onclick = () => { const ids = libIds(); if (ids.length) call("queue_add_library", { ids, replace: true, play: true }); };
 
 // ── queue ─────────────────────────────────────────────────────────────────────
 function renderQueue() {
@@ -308,7 +422,7 @@ $("set-rediscover").onclick = () => call("rediscover_device");
 (async function init() {
   await listen("playback", (e) => renderPlayback(e.payload));
   await listen("queue", (e) => { S.queue = e.payload; renderQueue(); });
-  await listen("library", (e) => { S.lib = e.payload; renderLibrary(); });
+  await listen("library", (e) => { S.lib = e.payload; S.tree = null; renderLibrary(); });
   const snap = await call("snapshot");
   if (!snap) return;
   S.queue = snap.queue; S.lib = snap.library;

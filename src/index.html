@@ -50,12 +50,14 @@
     <section id="view-library" class="view">
       <header class="bar">
         <h2>Library</h2>
+        <div class="seg" id="lib-mode"><button data-mode="tracks">Tracks</button><button data-mode="folders">Folders</button></div>
         <input type="search" id="lib-filter" placeholder="Search title, artist, album…">
         <div class="spacer"></div>
         <span class="muted" id="lib-status"></span>
         <button class="chip" id="lib-addall">Add all</button>
         <button class="chip primary" id="lib-playall">Play all</button>
       </header>
+      <div class="crumbs" id="lib-crumbs" hidden></div>
       <div class="cols head" id="lib-head">
         <span class="c-n"></span>
         <button data-sort="title" class="c-title">Title</button>
