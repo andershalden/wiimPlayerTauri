@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WiiM Player</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-dot"></span>WiiM Player</div>
+    <nav id="nav">
+      <button data-view="now" class="active"><svg viewBox="0 0 24 24"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3z"/></svg>Now Playing</button>
+      <button data-view="queue"><svg viewBox="0 0 24 24"><path d="M3 6h13v2H3zm0 5h13v2H3zm0 5h8v2H3zm14-1v-4l5 3z"/></svg>Queue<span class="badge" id="queue-count"></span></button>
+      <button data-view="library"><svg viewBox="0 0 24 24"><path d="M4 4h4v16H4zm6 0h4v16h-4zm6 2.3 3.9-1 4 15.4-3.9 1z"/></svg>Library<span class="badge" id="lib-count"></span></button>
+      <button data-view="network"><svg viewBox="0 0 24 24"><path d="M12 2 2 7v2h20V7zM4 11v7H2v2h20v-2h-2v-7h-2v7h-3v-7h-2v7h-2v-7H9v7H6v-7z"/></svg>Network</button>
+      <button data-view="settings"><svg viewBox="0 0 24 24"><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.7 7.7 0 0 0-1.7-1L15 3h-4l-.4 3a7.7 7.7 0 0 0-1.7 1l-2.4-1-2 3.4L6.6 11a7.6 7.6 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7.7 7.7 0 0 0 1.7 1l.4 3h4l.4-3a7.7 7.7 0 0 0 1.7-1l2.4 1 2-3.4zM13 15.5A3.5 3.5 0 1 1 13 8.5a3.5 3.5 0 0 1 0 7z"/></svg>Settings</button>
+    </nav>
+    <div class="conn"><span class="dot" id="conn-dot"></span><span id="conn-text">Starting…</span></div>
+  </aside>
+
+  <main>
+    <div id="error" class="error" hidden></div>
+
+    <section id="view-now" class="view active">
+      <div class="now">
+        <div class="art big"><img id="now-art" alt="" hidden><svg class="art-ph" viewBox="0 0 24 24"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3z"/></svg></div>
+        <div class="now-meta">
+          <div class="now-state" id="now-state">Idle</div>
+          <h1 id="now-title">Nothing playing</h1>
+          <div class="now-artist" id="now-artist"></div>
+          <div class="now-album" id="now-album"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-queue" class="view">
+      <header class="bar">
+        <h2>Queue</h2>
+        <input type="search" id="queue-filter" placeholder="Search queue…">
+        <div class="spacer"></div>
+        <button class="chip" id="btn-shuffle" title="Shuffle"></button>
+        <button class="chip" id="btn-repeat" title="Repeat"></button>
+        <button class="chip danger" id="btn-clear">Clear</button>
+      </header>
+      <div class="list" id="queue-list"></div>
+    </section>
+
+    <section id="view-library" class="view">
+      <header class="bar">
+        <h2>Library</h2>
+        <input type="search" id="lib-filter" placeholder="Search title, artist, album…">
+        <div class="spacer"></div>
+        <span class="muted" id="lib-status"></span>
+        <button class="chip" id="lib-addall">Add all</button>
+        <button class="chip primary" id="lib-playall">Play all</button>
+      </header>
+      <div class="cols head" id="lib-head">
+        <span class="c-n"></span>
+        <button data-sort="title" class="c-title">Title</button>
+        <button data-sort="artist" class="c-artist">Artist</button>
+        <button data-sort="album" class="c-album">Album</button>
+        <button data-sort="duration" class="c-dur">Time</button>
+        <span class="c-act"></span>
+      </div>
+      <div class="list" id="lib-list"></div>
+    </section>
+
+    <section id="view-network" class="view">
+      <header class="bar">
+        <h2>Network</h2>
+        <select id="dlna-server"></select>
+        <button class="chip" id="dlna-refresh">Search</button>
+        <input type="search" id="dlna-filter" placeholder="Filter this folder…">
+        <div class="spacer"></div>
+        <button class="chip" id="dlna-addall">Add all</button>
+        <button class="chip primary" id="dlna-playall">Play all</button>
+      </header>
+      <div class="crumbs" id="dlna-crumbs"></div>
+      <div class="list" id="dlna-list"></div>
+    </section>
+
+    <section id="view-settings" class="view">
+      <header class="bar"><h2>Settings</h2></header>
+      <div class="settings">
+        <label>Music folder</label>
+        <div class="field">
+          <input id="set-folder" readonly>
+          <button class="chip" id="set-choose">Choose…</button>
+          <button class="chip" id="set-rescan">Rescan</button>
+        </div>
+        <label>WiiM IP address <span class="muted">(optional fallback if automatic discovery fails)</span></label>
+        <div class="field">
+          <input id="set-ip" placeholder="192.168.1.50">
+          <button class="chip" id="set-ip-save">Save &amp; reconnect</button>
+        </div>
+        <label>Speaker</label>
+        <div class="field">
+          <span id="set-device" class="muted"></span>
+          <button class="chip" id="set-rediscover">Search again</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="player">
+    <div class="p-track">
+      <div class="art small"><img id="bar-art" alt="" hidden><svg class="art-ph" viewBox="0 0 24 24"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3z"/></svg></div>
+      <div class="p-text"><div id="bar-title" class="p-title">Nothing playing</div><div id="bar-artist" class="p-artist"></div></div>
+    </div>
+    <div class="p-center">
+      <div class="p-buttons">
+        <button class="icon" id="btn-prev" title="Previous"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
+        <button class="icon play" id="btn-play" title="Play / Pause"></button>
+        <button class="icon" id="btn-next" title="Next"><svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6zM16 6h2v12h-2z"/></svg></button>
+      </div>
+      <div class="p-seek">
+        <span id="t-elapsed">0:00</span>
+        <input type="range" id="seek" min="0" max="0" value="0" step="1">
+        <span id="t-total">0:00</span>
+      </div>
+    </div>
+    <div class="p-volume">
+      <button class="icon" id="btn-mute" title="Mute"></button>
+      <input type="range" id="volume" min="0" max="100" value="0">
+      <span id="vol-val">0</span>
+    </div>
+  </footer>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
